@@ -2,7 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class QBatchNorm2d(nn.BatchNorm2d):
-    _FLOAT_MODULE = nn.Conv2d
+    _FLOAT_MODULE = nn.BatchNorm2d
     def __init__(self, num_features, eps=1e-5, momentum=0.1, affine=True,
                  track_running_stats=True, qconfig=None):
         super().__init__(num_features, eps, momentum, affine, track_running_stats)
@@ -55,3 +55,15 @@ class QBatchNorm2d(nn.BatchNorm2d):
                 bn_training, exponential_average_factor, self.eps
             )
         )
+    
+    @classmethod
+    def from_float(cls, mod):
+        assert type(mod) == cls._FLOAT_MODULE, 'qat.' + cls.__name__ + '.from_float only works for ' + \
+            cls._FLOAT_MODULE.__name__
+        qconfig = mod.qconfig
+        qat_bn = cls(mod.num_features, mod.eps, mod.momentum, mod.affine, mod.track_running_stats, qconfig)
+        qat_bn.running_mean = mod.running_mean
+        qat_bn.running_var = mod.running_var
+        qat_bn.weight = mod.weight
+        qat_bn.bias = mod.bias
+        return qat_bn

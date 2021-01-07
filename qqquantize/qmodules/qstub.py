@@ -1,31 +1,38 @@
 from torch import nn
 
-__all__ = ['QStub', 'QStubWrapper']
+__all__ = ['InputStub', 'QStub', 'QStubWrapper']
 
-class QStub(nn.Module):
-    r"""Quantize stub module, before calibration, this is same as an observer,
-    it will be swapped as `nnq.Quantize` in `convert`.
-
-    Args:
-        qconfig: quantization configuration for the tensor,
-            if qconfig is not provided, we will get qconfig from parent modules
-    """
-    def __init__(self, qconfig=None):
-        super().__init__()
-        if qconfig:
-            self.qconfig = qconfig
-
+class InputStub(nn.Module):
+    r"""only used for convert to QStub"""
     def forward(self, x):
         return x
 
-class QStubWrapper(nn.Module):
-    def __init__(self, module):
+class QStub(nn.Module):
+    _FLOAT_MODULE = InputStub
+    def __init__(self, qconfig):
         super().__init__()
-        qconfig = module.qconfig if hasattr(module, 'qconfig') else None
-        self.add_module('quant', QStub(qconfig))
+        self.qconfig = qconfig
+        self.qconfig = qconfig
+        self.activation_post_process = qconfig.activation()
+    
+    def forward(self, x):
+        return self.activation_post_process(x)
+
+    @classmethod
+    def from_float(cls, mod):
+        assert type(mod) == cls._FLOAT_MODULE, 'qat.' + cls.__name__ + '.from_float only works for ' + \
+            cls._FLOAT_MODULE.__name__
+        qconfig = mod.qconfig
+        qstub = cls(qconfig)
+        return qstub
+
+class QStubWrapper(nn.Module):
+    def __init__(self, module, qconfig=None):
+        super().__init__()
+        self.add_module('inputStub', InputStub())
         self.add_module('module', module)
         self.train(module.training)
 
     def forward(self, X):
-        X = self.quant(X)
+        X = self.inputStub(X)
         return self.module(X)

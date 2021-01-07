@@ -9,8 +9,7 @@ from tqdm import tqdm
 import pickle
 
 from zfnet import ZFNet
-from qqquantize.qconfig import DEFAULT_QAT_MODULE_MAPPING
-from qqquantize.quantize import prepare, convert
+from qqquantize.quantize import prepare
 from qqquantize.observers.fake_quantize import FakeQuantize
 from qqquantize.utils import enable_fake_quant, disable_fake_quant, enable_observer, disable_observer
 from qqquantize.savehook import register_intermediate_hooks
@@ -56,7 +55,7 @@ if __name__ == '__main__':
     testset = torchvision.datasets.CIFAR10(
         root=CIFAR_ROOT, train=False, download=False, transform=transform_test)
     testloader = torch.utils.data.DataLoader(
-        testset, batch_size=8, shuffle=False, num_workers=4)
+        testset, batch_size=32, shuffle=False, num_workers=4)
     print('>>> before quantize test')
     test(net, testloader)
 
@@ -65,10 +64,7 @@ if __name__ == '__main__':
         'weight': FakeQuantize.with_args(bits=8, max_factor=0.75)
     })
 
-    # prepare only add observer for activation
-    prepare(net, qconfig, inplace=True)
-    # convert will convert each layer which contain weight_fake_quant
-    convert(net, mapping=DEFAULT_QAT_MODULE_MAPPING, inplace=True)
+    net = prepare(net, qconfig)
     disable_fake_quant(net)
     enable_observer(net)
     for batch_idx, (inputs, targets) in enumerate(trainloader):

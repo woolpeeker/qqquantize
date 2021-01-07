@@ -1,10 +1,11 @@
 
 import torch.nn as nn
 import qqquantize
-from qqquantize.qmodules.qlinear import QLinear
-from qqquantize.qmodules.qconv import QConv2d
+import qqquantize.qmodules as qm
 
 DEFAULT_QAT_MODULE_MAPPING = {
-    nn.Linear: QLinear,
-    nn.Conv2d: QConv2d
+    nn.Linear: qm.QLinear,
+    nn.Conv2d: qm.QConv2d,
+    nn.BatchNorm2d: qm.QBatchNorm2d,
+    qm.InputStub: qm.QStub,
 }
