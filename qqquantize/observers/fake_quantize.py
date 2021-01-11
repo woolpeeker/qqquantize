@@ -18,13 +18,14 @@ class Fake_quantize_per_tensor(InplaceFunction):
             Xq = torch.floor(X / scale + zero_point)
             Xq = torch.clip(Xq, qmin, qmax)
             Xqf = (Xq - zero_point) * scale
+            Xqf.scale = scale
+            Xqf.zero_point = zero_point
             return Xqf
 
     @staticmethod
     def backward(ctx, grad_output):
         grad_input = grad_output
         return grad_input, None, None, None, None, None
-
 
 class FakeQuantize(nn.Module):
     def __init__(self, observer=MovingAverageMinMaxObserver, **observer_kwargs):
@@ -56,18 +57,21 @@ class FakeQuantize(nn.Module):
         return self
 
     @torch.jit.export
-    def calculate_qparams(self):
-        return self.observer.calculate_qparams()
-
-    def forward(self, X):
-        if self.observer_enabled[0] == 1:
-            self.observer(X.detach())
-            _scale, _zero_point = self.calculate_qparams()
-            _scale, _zero_point = _scale.to(self.scale.device), _zero_point.to(self.zero_point.device)
+    def calculate_qparams(self, inplace=False):
+        _scale, _zero_point = self.observer.calculate_qparams()
+        _scale, _zero_point = _scale.to(self.scale.device), _zero_point.to(self.zero_point.device)
+        if inplace:
             self.scale.resize_(_scale.shape)
             self.scale.copy_(_scale)
             self.zero_point.resize_(_zero_point.shape)
             self.zero_point.copy_(_zero_point)
+        else:
+            return _scale, _zero_point
+
+    def forward(self, X):
+        if self.observer_enabled[0] == 1:
+            self.observer(X.detach())
+            self.calculate_qparams(inplace=True)
 
         if self.fake_quant_enabled[0] == 1:
             X = Fake_quantize_per_tensor.apply(
@@ -106,3 +110,25 @@ class FakeQuantize(nn.Module):
                 missing_keys.append(key)
         super(FakeQuantize, self)._load_from_state_dict(state_dict, prefix, local_metadata, strict,
                                                         missing_keys, unexpected_keys, error_msgs)
+
+
+
+def enable_fake_quant(module):
+    for mod in module.modules():
+        if hasattr(mod, 'enable_fake_quant'):
+            mod.enable_fake_quant()
+
+def disable_fake_quant(module):
+    for mod in module.modules():
+        if hasattr(mod, 'disable_fake_quant'):
+            mod.disable_fake_quant()
+
+def enable_observer(module):
+    for mod in module.modules():
+        if hasattr(mod, 'enable_observer'):
+            mod.enable_observer()
+
+def disable_observer(module):
+    for mod in module.modules():
+        if hasattr(mod, 'disable_observer'):
+            mod.disable_observer()

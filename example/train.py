@@ -16,7 +16,7 @@ import argparse
 from zfnet import ZFNet
 from utils import progress_bar
 
-MAX_EPOCH = 50
+MAX_EPOCH = 100
 OUT_CKPT = './checkpoint/zfnet_float.pth'
 DOWNLOAD_CIFAR = True
 CIFAR_ROOT = '/home/luojiapeng/root_data_lnk/datasets/cifar'
@@ -25,13 +25,13 @@ def lr_lambda(epoch):
     if epoch < 50:
         return 1
     elif epoch < 100:
-        return 0.1
+        return 0.2
     else:
-        return 0.01
+        return 0.04
 
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
-parser.add_argument('--lr', default=0.1, type=float, help='learning rate')
+parser.add_argument('--lr', default=0.01, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true',
                     help='resume from checkpoint')
 args = parser.parse_args()
@@ -67,7 +67,7 @@ classes = ('plane', 'car', 'bird', 'cat', 'deer',
 
 # Model
 print('==> Building model..')
-net = ZFNet()
+net = ZFNet(0.5)
 if args.resume:
     # Load checkpoint.
     print('==> Resuming from checkpoint..')

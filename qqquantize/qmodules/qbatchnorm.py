@@ -10,6 +10,7 @@ class QBatchNorm2d(nn.BatchNorm2d):
         self.qconfig = qconfig
         self.activation_post_process = qconfig.activation()
         self.weight_fake_quant = qconfig.weight()
+        raise Exception("this module should not be used")
 
     def forward(self, input):
         self._check_input_dim(input)
@@ -62,8 +63,10 @@ class QBatchNorm2d(nn.BatchNorm2d):
             cls._FLOAT_MODULE.__name__
         qconfig = mod.qconfig
         qat_bn = cls(mod.num_features, mod.eps, mod.momentum, mod.affine, mod.track_running_stats, qconfig)
-        qat_bn.running_mean = mod.running_mean
-        qat_bn.running_var = mod.running_var
         qat_bn.weight = mod.weight
         qat_bn.bias = mod.bias
+        qat_bn.running_mean = mod.running_mean
+        qat_bn.running_var = mod.running_var
+        qat_bn.num_batches_tracked = mod.num_batches_tracked
+        
         return qat_bn

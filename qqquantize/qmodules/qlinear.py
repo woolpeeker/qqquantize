@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -11,12 +12,19 @@ class QLinear(nn.Linear):
         super().__init__(in_features, out_features, bias)
         assert qconfig, 'qconfig must be provided for QAT module'
         self.qconfig = qconfig
-        self.activation_post_process = qconfig.activation()
-        self.weight_fake_quant = qconfig.weight()
+        self.act_quant = qconfig.activation()
+        self.weight_quant = qconfig.weight()
+        self.bias_quant = qconfig.bias()
 
     def forward(self, input):
-        return self.activation_post_process(
-            F.linear(input, self.weight_fake_quant(self.weight), self.bias))
+        weight = self.weight_quant(self.weight)
+        if isinstance(self.bias, torch.Tensor):
+            bias = self.bias_quant(self.bias)
+        else:
+            bias = None
+        return self.act_quant(
+            F.linear(input, weight, bias)
+        )
 
     @classmethod
     def from_float(cls, mod):

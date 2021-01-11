@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -14,12 +15,27 @@ class QConv2d(nn.Conv2d):
                                      groups=groups, bias=bias, padding_mode=padding_mode)
         assert qconfig, 'qconfig must be provided for QAT module'
         self.qconfig = qconfig
-        self.activation_post_process = qconfig.activation()
-        self.weight_fake_quant = qconfig.weight()
+        self.act_quant = qconfig.activation()
+        self.weight_quant = qconfig.weight()
+        self.bias_quant = qconfig.bias()
 
-    def forward(self, input):
-        return self.activation_post_process(
-            self._conv_forward(input, self.weight_fake_quant(self.weight)))
+    def forward(self, inputs):
+        weight = self.weight_quant(self.weight)
+        
+        if isinstance(self.bias, torch.Tensor):
+            bias = self.bias_quant(self.bias)
+        else:
+            bias = None
+        
+        if self.padding_mode != 'zeros':
+            paddings = (0, 0)
+        else:
+            paddings = self.padding
+        
+        return self.act_quant(
+            F.conv2d(inputs, weight, bias, self.stride,
+                        paddings, self.dilation, self.groups)
+            )
 
     @classmethod
     def from_float(cls, mod):

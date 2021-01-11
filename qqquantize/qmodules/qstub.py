@@ -13,10 +13,10 @@ class QStub(nn.Module):
         super().__init__()
         self.qconfig = qconfig
         self.qconfig = qconfig
-        self.activation_post_process = qconfig.activation()
+        self.act_quant = qconfig.activation()
     
     def forward(self, x):
-        return self.activation_post_process(x)
+        return self.act_quant(x)
 
     @classmethod
     def from_float(cls, mod):

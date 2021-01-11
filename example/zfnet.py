@@ -13,17 +13,20 @@ class ConvBnReLU(nn.Module):
     
     def forward(self, x):
         x = self.conv(x)
+        x = self.bn(x)
         x = self.relu(x)
         return x
 
-class LinearReLU(nn.Module):
+class LinearBnReLU(nn.Module):
     def __init__(self, *args, **kwargs):
         super().__init__()
         self.linear = nn.Linear(*args, **kwargs)
+        self.bn = nn.BatchNorm1d(self.linear.out_features)
         self.relu = nn.ReLU()
     
     def forward(self, x):
         x = self.linear(x)
+        x = self.bn(x)
         x = self.relu(x)
         return x
 
@@ -44,8 +47,7 @@ class ZFNet(nn.Module):
         )
         # 全连接层
         self.fc = nn.Sequential(
-            LinearReLU(int(256*cf), int(256*cf), bias=False),
-            nn.Dropout(0.5),
+            LinearBnReLU(int(256*cf), int(256*cf), bias=False),
             nn.Linear(int(256*cf), 10, bias=False),
         )
     def forward(self, img):
@@ -54,3 +56,17 @@ class ZFNet(nn.Module):
         feature = feature.reshape([BS, -1])
         output = self.fc(feature)
         return output
+
+def fuse_zfnet(net, inplace=False):
+    from qqquantize.utils import fuse_conv_bn
+    import copy
+    if not inplace:
+        net = copy.deepcopy(net)
+    for mod in net.modules():
+        if isinstance(mod, ConvBnReLU):
+            mod.conv = fuse_conv_bn(mod.conv, mod.bn)
+            mod.bn = nn.Identity()
+        if isinstance(mod, LinearBnReLU):
+            mod.linear = fuse_conv_bn(mod.linear, mod.bn)
+            mod.bn = nn.Identity()
+    return net
