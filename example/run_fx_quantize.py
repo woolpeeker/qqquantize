@@ -20,7 +20,7 @@ from qqquantize.savehook import register_intermediate_hooks
 from qqquantize.toolbox import fxquantize
 import qqquantize.qmodules as qm
 
-CKPT_PATH = 'checkpoint/zfnet_quant.pth'
+CKPT_PATH = 'checkpoint/zfnet_float.pth'
 CIFAR_ROOT = '/home/luojiapeng/root_data_lnk/datasets/cifar'
 DEVICE = 'cuda'
 
@@ -90,9 +90,9 @@ if __name__ == '__main__':
     })
 
     net = ZFNet(0.5).eval().to(DEVICE)
+    net.load_state_dict(torch.load(CKPT_PATH))
     fuse_zfnet(net, inplace=True)
     net = prepare(net, qconfig)
-    net.load_state_dict(torch.load(CKPT_PATH))
     
     enable_fake_quant(net)
     disable_observer(net)
@@ -125,6 +125,7 @@ if __name__ == '__main__':
             if changed:
                 adjust_bits(model, fake_input)
         adjust_bits(net, fake_input)
+    fx_adjust_bits(net, fake_input)
     bit_dict = fxquantize.get_layer_bits(net, fake_input)
     test(net, testloader)
 

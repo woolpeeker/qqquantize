@@ -33,6 +33,6 @@ class QStubWrapper(nn.Module):
         self.add_module('module', module)
         self.train(module.training)
 
-    def forward(self, X):
+    def forward(self, X, *args, **kwargs):
         X = self.inputStub(X)
-        return self.module(X)
+        return self.module(X, *args, **kwargs)

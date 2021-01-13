@@ -51,6 +51,6 @@ class QConv2d(nn.Conv2d):
                        stride=mod.stride, padding=mod.padding, dilation=mod.dilation,
                        groups=mod.groups, bias=mod.bias is not None,
                        padding_mode=mod.padding_mode, qconfig=qconfig)
-        qat_conv.weight = mod.weight
-        qat_conv.bias = mod.bias
+        qat_conv.weight = torch.nn.Parameter(mod.weight)
+        qat_conv.bias =torch.nn.Parameter(mod.bias)
         return qat_conv
