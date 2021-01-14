@@ -17,7 +17,8 @@ class QConv2d(nn.Conv2d):
         self.qconfig = qconfig
         self.act_quant = qconfig.activation()
         self.weight_quant = qconfig.weight()
-        self.bias_quant = qconfig.bias()
+        if bias:
+            self.bias_quant = qconfig.bias()
 
     def forward(self, inputs):
         weight = self.weight_quant(self.weight)

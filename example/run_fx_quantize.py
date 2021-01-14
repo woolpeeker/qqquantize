@@ -90,43 +90,24 @@ if __name__ == '__main__':
     })
 
     net = ZFNet(0.5).eval().to(DEVICE)
-    net.load_state_dict(torch.load(CKPT_PATH))
+    net.load_state_dict(torch.load(CKPT_PATH)['net'])
     fuse_zfnet(net, inplace=True)
     net = prepare(net, qconfig)
+    
+    disable_fake_quant(net)
+    enable_observer(net)
+    test(net, testloader)
     
     enable_fake_quant(net)
     disable_observer(net)
     print('>>> after quantize test')
     test(net, testloader)
 
-    from qqquantize.qtensor import QTensor
     data_iter = iter(testloader)
-    fake_input = next(data_iter)[0]
-    
-    fake_input = QTensor(fake_input).to(DEVICE)
-    def fx_adjust_bits(net, fake_input):
-        QMOD_LIST = list(DEFAULT_QAT_MODULE_MAPPING.values())
-        for name, mod in net.named_modules():
-            if type(mod) in QMOD_LIST:
-                for m in mod.modules():
-                    if isinstance(m, FakeQuantize):
-                        if m.scale > 1:
-                            m.scale = torch.tensor([0.0], device=m.scale.device)
-                        if m.scale < 2**-7:
-                            m.scale = torch.tensor([2**-7], device=m.scale.device)
-        def adjust_bits(model, fake_input):
-            bit_dict = fxquantize.get_layer_bits(net, fake_input)
-            for name, mod in net.named_modules():
-                if isinstance(mod, qm.QConv2d):
-                    i_bit = bit_dict[name]['inp'][0]
-                    changed = fxquantize.conv_bit_adjust(mod, i_bit)
-                    if changed:
-                        break
-            if changed:
-                adjust_bits(model, fake_input)
-        adjust_bits(net, fake_input)
-    fx_adjust_bits(net, fake_input)
-    bit_dict = fxquantize.get_layer_bits(net, fake_input)
+    fake_input = next(data_iter)[0].to(DEVICE)
+    before_bit_dict = fxquantize.get_layer_bits(net, fake_input)
+    fxquantize.fx_adjust_bits(net, fake_input)
+    after_bit_dict = fxquantize.get_layer_bits(net, fake_input)
     test(net, testloader)
 
     criterion = nn.CrossEntropyLoss()

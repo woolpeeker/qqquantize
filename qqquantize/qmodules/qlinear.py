@@ -14,7 +14,8 @@ class QLinear(nn.Linear):
         self.qconfig = qconfig
         self.act_quant = qconfig.activation()
         self.weight_quant = qconfig.weight()
-        self.bias_quant = qconfig.bias()
+        if bias:
+            self.bias_quant = qconfig.bias()
 
     def forward(self, input):
         weight = self.weight_quant(self.weight)
