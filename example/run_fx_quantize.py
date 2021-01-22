@@ -14,8 +14,19 @@ import pickle
 from zfnet import ZFNet, fuse_zfnet
 from qqquantize.qconfig import DEFAULT_QAT_MODULE_MAPPING
 from qqquantize.quantize import prepare
-from qqquantize.observers.fake_quantize import FakeQuantize
-from qqquantize.observers.fake_quantize import enable_fake_quant, disable_fake_quant, enable_observer, disable_observer
+from qqquantize.observers.histogramobserver import HistObserver, swap_minmax_to_hist
+from qqquantize.observers.minmaxobserver import MinMaxObserver, MovingAverageMinMaxObserver
+from qqquantize.observers.minmaxchannelsobserver import MovingAverageMinMaxChannelsObserver
+from qqquantize.observers.fake_quantize import (
+    FakeQuantize,
+    Fake_quantize_per_channel,
+    Fake_quantize_per_tensor,
+    enable_fake_quant,
+    disable_fake_quant,
+    enable_observer,
+    disable_observer,
+    calc_qparams,
+)
 from qqquantize.savehook import register_intermediate_hooks
 from qqquantize.toolbox import fxquantize
 import qqquantize.qmodules as qm
@@ -81,12 +92,20 @@ if __name__ == '__main__':
     testset = torchvision.datasets.CIFAR10(
         root=CIFAR_ROOT, train=False, download=False, transform=transform_test)
     testloader = torch.utils.data.DataLoader(
-        testset, batch_size=32, shuffle=False, num_workers=4)
+        testset, batch_size=64, shuffle=False, num_workers=4)
     
     qconfig = edict({
-        'activation': FakeQuantize.with_args(bits=8, max_factor=0.8),
-        'weight': FakeQuantize.with_args(bits=8, max_factor=0.8),
-        'bias': FakeQuantize.with_args(bits=8, max_factor=0.8)
+        'activation': FakeQuantize.with_args(
+            observer=MovingAverageMinMaxObserver,
+            quantize_func=Fake_quantize_per_tensor,
+            bits=8
+        ),
+        'weight': FakeQuantize.with_args(
+            observer=MovingAverageMinMaxObserver,
+            quantize_func=Fake_quantize_per_tensor,
+            bits=8
+        ),
+        'bias': FakeQuantize.with_args(bits=8),
     })
 
     net = ZFNet(0.5).eval().to(DEVICE)
@@ -97,18 +116,30 @@ if __name__ == '__main__':
     disable_fake_quant(net)
     enable_observer(net)
     test(net, testloader)
-    
+    calc_qparams(net)
+
     enable_fake_quant(net)
     disable_observer(net)
-    print('>>> after quantize test')
+    print('>>> after minmax quantize test')
+    test(net, testloader)
+    
+    disable_fake_quant(net)
+    enable_observer(net)
+    swap_minmax_to_hist(net)
+    test(net, testloader)
+    calc_qparams(net)
+
+    enable_fake_quant(net)
+    disable_observer(net)
+    print('>>> after hist quantize test')
     test(net, testloader)
 
-    data_iter = iter(testloader)
-    fake_input = next(data_iter)[0].to(DEVICE)
-    before_bit_dict = fxquantize.get_layer_bits(net, fake_input)
-    fxquantize.fx_adjust_bits(net, fake_input)
-    after_bit_dict = fxquantize.get_layer_bits(net, fake_input)
-    test(net, testloader)
+    # data_iter = iter(testloader)
+    # fake_input = next(data_iter)[0].to(DEVICE)
+    # before_bit_dict = fxquantize.get_layer_bits(net, fake_input)
+    # fxquantize.fx_adjust_bits(net, fake_input)
+    # after_bit_dict = fxquantize.get_layer_bits(net, fake_input)
+    # test(net, testloader)
 
     criterion = nn.CrossEntropyLoss()
     optimizer = optim.SGD(net.parameters(), lr=0.01,

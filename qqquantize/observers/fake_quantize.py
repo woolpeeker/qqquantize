@@ -3,6 +3,18 @@ import torch.nn as nn
 from torch.autograd.function import InplaceFunction
 from .minmaxobserver import MovingAverageMinMaxObserver
 from .observerbase import _with_args
+import re
+
+__all__ = [
+    'Fake_quantize_per_tensor',
+    'Fake_quantize_per_channel',
+    'FakeQuantize',
+    'enable_fake_quant',
+    'disable_fake_quant',
+    'enable_observer',
+    'disable_observer',
+    'calc_qparams',
+]
 
 class Fake_quantize_per_tensor(InplaceFunction):
     """return a quantized and dequantized a float tensor"""
@@ -13,6 +25,11 @@ class Fake_quantize_per_tensor(InplaceFunction):
             ctx.mark_dirty(X)
         else:
             X = X.clone()
+        ctx.save_for_backward(
+            X,
+            torch.tensor([qmin], device=X.device),
+            torch.tensor([qmax], device=X.device)
+        )
 
         with torch.no_grad():
             Xq = torch.floor(X / scale + zero_point)
@@ -24,17 +41,62 @@ class Fake_quantize_per_tensor(InplaceFunction):
 
     @staticmethod
     def backward(ctx, grad_output):
-        grad_input = grad_output
+        X, qmin, qmax = ctx.saved_tensors
+        grad_input = grad_output.detach().clone()
+        m0 = torch.logical_and(X<qmin, grad_input>0)
+        m1 = torch.logical_and(X>qmax, grad_input<0)
+        m = torch.logical_or(m0, m1)
+        grad_input[m] = 0
+        return grad_input, None, None, None, None, None
+
+class Fake_quantize_per_channel(InplaceFunction):
+    """return a quantized and dequantized a float tensor"""
+    @staticmethod
+    def forward(ctx, X, scale, zero_point, qmin, qmax, c_dim=1, inplace=False):
+        ctx.inplace = inplace
+        if ctx.inplace:
+            ctx.mark_dirty(X)
+        else:
+            X = X.clone()
+        ctx.save_for_backward(
+            X,
+            torch.tensor([qmin], device=X.device),
+            torch.tensor([qmax], device=X.device)
+        )
+        
+        shape = [1] * len(X.shape)
+        shape[c_dim] = -1
+        scale = scale.reshape(shape)
+        zero_point = zero_point.reshape(shape)
+
+        with torch.no_grad():
+            Xq = torch.floor(X / scale + zero_point)
+            Xq = torch.clip(Xq, qmin, qmax)
+            Xqf = (Xq - zero_point) * scale
+            Xqf.scale = scale
+            Xqf.zero_point = zero_point
+            return Xqf
+
+    @staticmethod
+    def backward(ctx, grad_output):
+        X, qmin, qmax = ctx.saved_tensors
+        grad_input = grad_output.detach().clone()
+        m0 = torch.logical_and(X<qmin, grad_input>0)
+        m1 = torch.logical_and(X>qmax, grad_input<0)
+        m = torch.logical_or(m0, m1)
+        grad_input[m] = 0
         return grad_input, None, None, None, None, None
 
 class FakeQuantize(nn.Module):
-    def __init__(self, observer=MovingAverageMinMaxObserver, **observer_kwargs):
+    def __init__(self, observer=MovingAverageMinMaxObserver, quantize_func=Fake_quantize_per_tensor, **observer_kwargs):
         super().__init__()
         self.register_buffer('fake_quant_enabled', torch.tensor([0], dtype=torch.uint8))
         self.register_buffer('observer_enabled', torch.tensor([0], dtype=torch.uint8))
+        self.register_buffer('calc_qparams', torch.tensor([0], dtype=torch.uint8))
         self.observer = observer(**observer_kwargs)
         self.register_buffer('scale', torch.tensor([1.0]))
         self.register_buffer('zero_point', torch.tensor([0]))
+        self.quantize_func = quantize_func
 
     @torch.jit.export
     def enable_fake_quant(self):
@@ -55,6 +117,16 @@ class FakeQuantize(nn.Module):
     def disable_observer(self):
         self.observer_enabled[0] = 0
         return self
+    
+    @torch.jit.export
+    def enable_calc_qparams(self):
+        self.calc_qparams[0] = 1
+        return self
+    
+    @torch.jit.export
+    def disable_calc_qparams(self):
+        self.calc_qparams[0] = 0
+        return self
 
     @torch.jit.export
     def calculate_qparams(self, inplace=False):
@@ -71,11 +143,13 @@ class FakeQuantize(nn.Module):
     def forward(self, X):
         if self.observer_enabled[0] == 1:
             self.observer(X.detach())
+        
+        if self.calc_qparams[0] == 1:
             self.calculate_qparams(inplace=True)
 
         if self.fake_quant_enabled[0] == 1:
-            X = Fake_quantize_per_tensor.apply(
-                X, float(self.scale), int(self.zero_point),
+            X = self.quantize_func.apply(
+                X, self.scale, self.zero_point,
                 self.observer.qmin, self.observer.qmax
             )
         return X
@@ -123,12 +197,27 @@ def disable_fake_quant(module):
         if hasattr(mod, 'disable_fake_quant'):
             mod.disable_fake_quant()
 
-def enable_observer(module):
-    for mod in module.modules():
-        if hasattr(mod, 'enable_observer'):
+def enable_observer(module, pattern=''):
+    for name, mod in module.named_modules():
+        if hasattr(mod, 'enable_observer') and re.search(pattern, name):
             mod.enable_observer()
 
 def disable_observer(module):
     for mod in module.modules():
         if hasattr(mod, 'disable_observer'):
             mod.disable_observer()
+
+def enable_calc_qparams(module):
+    for mod in module.modules():
+        if hasattr(mod, 'enable_calc_qparams'):
+            mod.enable_calc_qparams()
+
+def disable_calc_qparams(module):
+    for mod in module.modules():
+        if hasattr(mod, 'disable_calc_qparams'):
+            mod.disable_calc_qparams()
+
+def calc_qparams(module):
+    for mod in module.modules():
+        if isinstance(mod, FakeQuantize):
+            mod.calculate_qparams(inplace=True)

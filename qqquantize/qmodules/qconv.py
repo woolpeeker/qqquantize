@@ -53,5 +53,6 @@ class QConv2d(nn.Conv2d):
                        groups=mod.groups, bias=mod.bias is not None,
                        padding_mode=mod.padding_mode, qconfig=qconfig)
         qat_conv.weight = torch.nn.Parameter(mod.weight)
-        qat_conv.bias =torch.nn.Parameter(mod.bias)
+        if mod.bias is not None:
+            qat_conv.bias =torch.nn.Parameter(mod.bias)
         return qat_conv

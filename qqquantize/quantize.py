@@ -1,62 +1,54 @@
 import torch.quantization
-import copy
+import copy, re
 from qqquantize.utils import get_unique_devices_
 import torch.nn as nn
-from qqquantize.qmodules import QStubWrapper, QStub
+from qqquantize.qmodules import QStubWrapper, InputStub
 from qqquantize.qconfig import DEFAULT_QAT_MODULE_MAPPING
 
-def prepare(model, qconfig, mapping=None):
-    r"""propagate qconfig and convert"""    
-    if mapping is None:
-        mapping = DEFAULT_QAT_MODULE_MAPPING
+__all__ = ['ModelConverter']
+
+class ModelConverter:
+    def __init__(self, qconfig, mapping=None, pattern='', extra_attr=None):
+        self.qconfig = qconfig
+        self.mapping = mapping if mapping is not None else DEFAULT_QAT_MODULE_MAPPING
+        self.pattern = pattern # used by propaget_qconfig
+        assert isinstance(extra_attr, list)
+        self.extra_attr = extra_attr # used by swapmodule
     
-    model = QStubWrapper(model)
-    add_cfg_lst =  list(mapping.keys()) + [QStub]
-    _propagate_qconfig(model, qconfig, add_cfg_lst)
-    _convert(model, mapping, inplace=True)
-    return model
+    def __call__(self, model):
+        model = QStubWrapper(model)
+        device = list(get_unique_devices_(model))[0]
+        self._propagate_qconfig(model)
+        self._convert(model, device)
+        return model.to(device)
+    
+    def _propagate_qconfig(self, model):
+        r"""Propagate qconfig through the module hierarchy and assign `qconfig`
+        attribute on each leaf module
+        """
+        add_cfg_lst =  list(self.mapping.keys()) + [InputStub]
+        for name, mod in model.named_modules():
+            if any([isinstance(mod, valid_type) for valid_type in add_cfg_lst]):
+                if re.search(self.pattern, name):
+                    mod.qconfig = self.qconfig        
+    
+    def _convert(self, model, device):
+        reassign = {}
 
-def _propagate_qconfig(module, qconfig, add_cfg_list):
-    r"""Propagate qconfig through the module hierarchy and assign `qconfig`
-    attribute on each leaf module
-    """
-    children = list(module.children())
-    for child in children:
-        _propagate_qconfig(child, qconfig, add_cfg_list)
-    add_qconfig = any([isinstance(module, valid_type) for valid_type in add_cfg_list])
-    if add_qconfig:
-        module.qconfig = qconfig
-        
-def _convert(module, mapping=None, inplace=False):
-    r"""
-    Args:
-        module: calibrated module with observers
-        mapping: a dictionary that maps from float module type to quantized
-                 module type, can be overwrritten to allow swapping user defined
-                 Modules
-        inplace: carry out model transformations in-place, the original module
-                 is mutated
+        swappable_modules = list(self.mapping.keys())
 
-    """
-    assert mapping
-    if not inplace:
-        module = copy.deepcopy(module)
-    reassign = {}
+        for name, mod in model.named_children():
+            if type(mod) not in swappable_modules or not hasattr(mod, 'qconfig'):
+                self._convert(mod, device)
+            else:
+                reassign[name] = swap_module(mod, self.mapping, self.extra_attr).to(device)
 
-    swappable_modules = list(mapping.keys())
+        for key, value in reassign.items():
+            model._modules[key] = value
 
-    for name, mod in module.named_children():
-        if type(mod) not in swappable_modules:
-            _convert(mod, mapping, inplace=True)
-        reassign[name] = swap_module(mod, mapping)
+        return model
 
-    for key, value in reassign.items():
-        module._modules[key] = value
-
-    return module
-
-
-def swap_module(mod, mapping):
+def swap_module(mod, mapping, extra_attr=None):
     r"""Swaps the module if it has a quantized counterpart and it has an
     `observer` attached.
 
@@ -77,8 +69,9 @@ def swap_module(mod, mapping):
                 "swap_module only works with cpu or single-device CUDA modules, "
                 "but got devices {}".format(devices)
             )
-            device = next(iter(devices)) if len(devices) > 0 else None
             new_mod = mapping[type(mod)].from_float(mod)
-            if device:
-                new_mod.to(device)
+        if extra_attr is not None:
+            for attr in extra_attr:
+                if hasattr(mod, attr):
+                    new_mod.__setattr__(attr, mod.__dict__['f'])
     return new_mod

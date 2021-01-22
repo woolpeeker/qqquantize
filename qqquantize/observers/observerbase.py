@@ -66,3 +66,23 @@ class ObserverBase(ABC, nn.Module):
         pass
 
     with_args = classmethod(_with_args)
+
+def calculate_qparams_symmetric(min_val, max_val, qmin, qmax):
+    """quant_x = int(float_x / scale)
+    scale is the unit size
+    zero_point is always 0"""
+    if min_val == 0 or max_val == 0:
+        raise ValueError(
+            "must run observer before calling calculate_qparams.\
+                                Returning default scale and zero point "
+        )
+    assert qmin < 0 and qmax > 0, "stupid assertion"
+    assert min_val < 0 and max_val > 0, "stupid assertion too"
+    max_val = max(abs(min_val), abs(max_val))
+    scale = max_val / max(abs(qmin), abs(qmax))
+    scale = max(scale, 1e-8)
+    scale = 0.5 ** math.floor(math.log(scale, 0.5))
+    zero_point = 0
+    if scale == 0:
+        raise ValueError('scale is 0')
+    return scale, zero_point

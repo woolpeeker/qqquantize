@@ -48,7 +48,7 @@ class MinMaxObserver(ObserverBase):
         max_val = max(-min_val, max_val) * self.max_factor
         scale = max_val / max(-self.qmin, self.qmax)
         scale = max(scale, 1e-8)
-        scale = 0.5 ** round(math.log(scale, 0.5))
+        scale = 0.5 ** math.floor(math.log(scale, 0.5))
         zero_point = 0
         if scale == 0:
             raise ValueError('scale is 0')

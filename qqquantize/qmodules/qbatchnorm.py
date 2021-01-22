@@ -8,9 +8,9 @@ class QBatchNorm2d(nn.BatchNorm2d):
         super().__init__(num_features, eps, momentum, affine, track_running_stats)
         assert qconfig, 'qconfig must be provided for QAT module'
         self.qconfig = qconfig
-        self.activation_post_process = qconfig.activation()
-        self.weight_fake_quant = qconfig.weight()
-        raise Exception("this module should not be used")
+        self.act_quant = qconfig.activation()
+        self.weight_quant = qconfig.weight()
+        # raise Exception("this module should not be used")
 
     def forward(self, input):
         self._check_input_dim(input)
@@ -45,14 +45,14 @@ class QBatchNorm2d(nn.BatchNorm2d):
         passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
         used for normalization (i.e. in eval mode when buffers are not None).
         """
-        return self.activation_post_process(
+        return self.act_quant(
             F.batch_norm(
                 input,
                 # If buffers are not to be tracked, ensure that they won't be updated
-                self.weight_fake_quant(self.running_mean) if not self.training or self.track_running_stats else None,
-                self.weight_fake_quant(self.running_var) if not self.training or self.track_running_stats else None,
-                self.weight_fake_quant(self.weight),
-                self.weight_fake_quant(self.bias),
+                self.weight_quant(self.running_mean) if not self.training or self.track_running_stats else None,
+                self.weight_quant(self.running_var) if not self.training or self.track_running_stats else None,
+                self.weight_quant(self.weight),
+                self.weight_quant(self.bias),
                 bn_training, exponential_average_factor, self.eps
             )
         )

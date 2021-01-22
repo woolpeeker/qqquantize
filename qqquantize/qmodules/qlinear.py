@@ -34,5 +34,6 @@ class QLinear(nn.Linear):
         qconfig = mod.qconfig
         qat_linear = cls(mod.in_features, mod.out_features, bias=mod.bias is not None, qconfig=qconfig)
         qat_linear.weight = mod.weight
-        qat_linear.bias = mod.bias
+        if mod.bias is not None:
+            qat_linear.bias = mod.bias
         return qat_linear

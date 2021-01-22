@@ -56,7 +56,7 @@ def conv_bit_adjust(module, i_bit):
         new_a_bit = i_bit + w_bit
     if i_bit + w_bit - a_bit > 7:
         new_a_bit = i_bit + w_bit - 7
-    module.act_quant.scale[:] = 0.5**new_a_bit
+    module.act_quant.scale.fill_(0.5**new_a_bit)
     if new_a_bit != a_bit:
         return True
     else:
