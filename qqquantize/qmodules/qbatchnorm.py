@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
@@ -10,7 +11,7 @@ class QBatchNorm2d(nn.BatchNorm2d):
         self.qconfig = qconfig
         self.act_quant = qconfig.activation()
         self.weight_quant = qconfig.weight()
-        # raise Exception("this module should not be used")
+        raise Exception("this module should not be used")
 
     def forward(self, input):
         self._check_input_dim(input)
@@ -45,16 +46,27 @@ class QBatchNorm2d(nn.BatchNorm2d):
         passed when the update should occur (i.e. in training mode when they are tracked), or when buffer stats are
         used for normalization (i.e. in eval mode when buffers are not None).
         """
+        F.batch_norm(
+            input,
+            # If buffers are not to be tracked, ensure that they won't be updated
+            self.running_mean if not self.training or self.track_running_stats else None,
+            self.running_var if not self.training or self.track_running_stats else None,
+            self.weight,
+            self.bias,
+            bn_training, exponential_average_factor, self.eps
+        )
+
+        mean = self.running_mean
+        var_sqrt = torch.sqrt(self.running_var + self.eps)
+        gamma = self.weight
+        beta = self.bias
+
+        weight = gamma / var_sqrt
+        bias = - mean / var_sqrt * gamma + beta
+        
+        shape = [1, -1, 1, 1]
         return self.act_quant(
-            F.batch_norm(
-                input,
-                # If buffers are not to be tracked, ensure that they won't be updated
-                self.weight_quant(self.running_mean) if not self.training or self.track_running_stats else None,
-                self.weight_quant(self.running_var) if not self.training or self.track_running_stats else None,
-                self.weight_quant(self.weight),
-                self.weight_quant(self.bias),
-                bn_training, exponential_average_factor, self.eps
-            )
+            input * self.weight_quant(weight.view(*shape)) + self.act_quant(bias.view(*shape))
         )
     
     @classmethod
@@ -63,10 +75,10 @@ class QBatchNorm2d(nn.BatchNorm2d):
             cls._FLOAT_MODULE.__name__
         qconfig = mod.qconfig
         qat_bn = cls(mod.num_features, mod.eps, mod.momentum, mod.affine, mod.track_running_stats, qconfig)
-        qat_bn.weight = mod.weight
-        qat_bn.bias = mod.bias
-        qat_bn.running_mean = mod.running_mean
-        qat_bn.running_var = mod.running_var
-        qat_bn.num_batches_tracked = mod.num_batches_tracked
+        qat_bn.weight.data.copy(mod.weight)
+        qat_bn.bias.data.copy(mod.bias)
+        qat_bn.running_mean.data.copy(mod.running_mean)
+        qat_bn.running_var.data.copy(mod.running_var)
+        qat_bn.num_batches_tracked.data.copy(mod.num_batches_tracked)
         
         return qat_bn

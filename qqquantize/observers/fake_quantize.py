@@ -185,8 +185,6 @@ class FakeQuantize(nn.Module):
         super(FakeQuantize, self)._load_from_state_dict(state_dict, prefix, local_metadata, strict,
                                                         missing_keys, unexpected_keys, error_msgs)
 
-
-
 def enable_fake_quant(module):
     for mod in module.modules():
         if hasattr(mod, 'enable_fake_quant'):
