@@ -12,7 +12,7 @@ class ModelConverter:
         self.qconfig = qconfig
         self.mapping = mapping if mapping is not None else DEFAULT_QAT_MODULE_MAPPING
         self.pattern = pattern # used by propaget_qconfig
-        assert isinstance(extra_attr, list)
+        assert extra_attr is None or isinstance(extra_attr, list)
         self.extra_attr = extra_attr # used by swapmodule
     
     def __call__(self, model):
