@@ -1,3 +1,7 @@
+
+### 安装
+``python setup.py develop``
+
 ### 代码结构
 root
 ├── example                             # 存放样例代码  
@@ -33,7 +37,7 @@ root
 2. 使用prepare函数，将网络的各层替换成量化版本的层
 3. 调用enable_fake_quant和disable_observer函数。这时，网络不进行量化，只统计数据分布
 4. 调用enable_fake_quant和disable_observer函数。网络开始进行量化，不再统计数据分布
-5. 使用Qtensor进行一次inference获取各层input,weight,output的量化bit数，fx_adjust_bits函数根据规则调整bit，使其符合规则
+5. (optional) 使用Qtensor进行一次inference获取各层input,weight,output的量化bit数，fx_adjust_bits函数根据规则调整bit，使其符合规则
 6. 开始训练
 
 

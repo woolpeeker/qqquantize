@@ -3,3 +3,4 @@
 *.pkl
 example/checkpoint/
 example/.ipynb_checkpoints/
+*.egg-info
